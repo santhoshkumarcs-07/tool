@@ -43,3 +43,10 @@ htmlcov/
 
 # Logs
 *.log
+
+# Build tools & temporary binaries
+*.exe
+.gradle/
+android/.gradle/
+android/app/build/
+android/local.properties
