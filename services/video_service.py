@@ -349,7 +349,8 @@ def recognize_frame_text(frame) -> str:
     Returns recognized text string, or empty string if no OCR engine is available.
     """
     try:
-        import pytesseract
+        # pyrefly: ignore [missing-import]
+        import pytesseract  # type: ignore[import-untyped, import-not-found]
         text = pytesseract.image_to_string(frame)
         if text and text.strip():
             return text.strip()
