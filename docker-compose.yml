@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  tool-discovery:
+    build: .
+    container_name: tool-discovery
+    restart: unless-stopped
+    ports:
+      - "${PORT:-5000}:5000"
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-openrouter/free}
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-prod-secure-token-tool-discovery-2026}
+      - MAX_UPLOAD_SIZE_MB=${MAX_UPLOAD_SIZE_MB:-500}
+      - DATA_DIR=/app/data
+    volumes:
+      # Persistent host mount for database, transcripts, and uploads
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

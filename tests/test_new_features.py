@@ -272,3 +272,29 @@ class TestNewApiRoutes:
     def test_install_approve_without_flag_fails(self, client):
         resp = client.post("/api/install/approve", json={"approved": False})
         assert resp.status_code == 400
+
+    def test_security_headers_present(self, client):
+        resp = client.get("/api/health")
+        assert resp.status_code == 200
+        assert resp.headers.get("X-Content-Type-Options") == "nosniff"
+        assert resp.headers.get("X-Frame-Options") == "SAMEORIGIN"
+        assert resp.headers.get("X-XSS-Protection") == "1; mode=block"
+        assert resp.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
+
+    def test_media_path_traversal_blocked(self, client):
+        resp = client.get("/api/media/../../etc/passwd")
+        assert resp.status_code in (400, 404)
+
+    def test_async_url_analysis_returns_202(self, client):
+        resp = client.post("/api/analyze/url?async=1", json={"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"})
+        assert resp.status_code == 202
+        data = resp.json
+        assert "video_id" in data
+        assert data["status"] == "pending"
+
+    def test_user_session_isolation(self, client):
+        # Client 1 saves a tool
+        client.post("/api/library/save", json={"name": "User1PrivateTool", "purpose": "Private Tool"})
+        resp1 = client.get("/api/library")
+        tool_names = [t["name"] for t in resp1.json["tools"]]
+        assert "User1PrivateTool" in tool_names

@@ -32,7 +32,7 @@ def get_db_path() -> Path:
 
 
 def init_db(db_path: Path | str = None) -> None:
-    """Initialize the database with the schema."""
+    """Initialize the database with the schema and run migrations."""
     if db_path is None:
         db_path = get_db_path()
     else:
@@ -41,6 +41,15 @@ def init_db(db_path: Path | str = None) -> None:
     with get_connection(db_path) as conn:
         with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
             conn.executescript(f.read())
+        # Safe migration for existing databases missing user_id
+        try:
+            conn.execute("ALTER TABLE videos ADD COLUMN user_id TEXT DEFAULT 'default'")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE saved_tools ADD COLUMN user_id TEXT DEFAULT 'default'")
+        except sqlite3.OperationalError:
+            pass
         conn.commit()
 
 
@@ -52,7 +61,7 @@ def get_connection(db_path: Path | str = None):
     else:
         db_path = Path(db_path)
 
-    conn = sqlite3.connect(str(db_path), timeout=10)
+    conn = sqlite3.connect(str(db_path), timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
@@ -66,13 +75,14 @@ def get_connection(db_path: Path | str = None):
 
 def create_video(source_type: str, source_url: str = None,
                  original_filename: str = None, title: str = None,
-                 stored_filename: str = None, duration_seconds: float = None) -> int:
+                 stored_filename: str = None, duration_seconds: float = None,
+                 user_id: str = "default") -> int:
     """Insert a new video/analysis record. Returns the new row ID."""
     with get_connection() as conn:
         cursor = conn.execute(
-            """INSERT INTO videos (source_type, source_url, original_filename, stored_filename, title, duration_seconds)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (source_type, source_url, original_filename, stored_filename, title, duration_seconds),
+            """INSERT INTO videos (source_type, source_url, original_filename, stored_filename, title, duration_seconds, user_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (source_type, source_url, original_filename, stored_filename, title, duration_seconds, user_id or "default"),
         )
         conn.commit()
         return cursor.lastrowid
@@ -95,7 +105,7 @@ def update_video_fields(video_id: int, **kwargs) -> None:
     """Update arbitrary fields on a video record."""
     allowed = {
         "title", "duration_seconds", "status", "error_message",
-        "transcript_path", "stored_filename",
+        "transcript_path", "stored_filename", "user_id",
     }
     fields = {k: v for k, v in kwargs.items() if k in allowed}
     if not fields:
@@ -117,12 +127,18 @@ def get_video(video_id: int) -> dict | None:
         return dict(row) if row else None
 
 
-def get_recent_videos(limit: int = 20) -> list[dict]:
-    """Fetch the most recent video analyses."""
+def get_recent_videos(limit: int = 20, user_id: str = None) -> list[dict]:
+    """Fetch the most recent video analyses, optionally filtered by user_id."""
     with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT * FROM videos ORDER BY created_at DESC LIMIT ?", (limit,)
-        ).fetchall()
+        if user_id:
+            rows = conn.execute(
+                "SELECT * FROM videos WHERE user_id = ? OR user_id = 'default' ORDER BY created_at DESC LIMIT ?",
+                (user_id, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM videos ORDER BY created_at DESC LIMIT ?", (limit,)
+            ).fetchall()
         return [dict(r) for r in rows]
 
 
@@ -205,7 +221,7 @@ def get_discovered_tool(tool_id: int) -> dict | None:
 
 # --- Saved Tool (Library) Operations ---
 
-def save_tool(discovered_tool_id: int = None, tool_data: dict = None) -> int:
+def save_tool(discovered_tool_id: int = None, tool_data: dict = None, user_id: str = "default") -> int:
     """Save a tool to the personal library. Returns the new row ID."""
     if tool_data is None:
         tool_data = {}
@@ -221,8 +237,8 @@ def save_tool(discovered_tool_id: int = None, tool_data: dict = None) -> int:
             """INSERT INTO saved_tools
                (discovered_tool_id, name, category, purpose, capabilities,
                 official_website, documentation_url, repository_url,
-                requirements, setup_steps, target_applications, personal_notes, tags)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                requirements, setup_steps, target_applications, personal_notes, tags, user_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 discovered_tool_id,
                 tool_data.get("name"),
@@ -237,16 +253,20 @@ def save_tool(discovered_tool_id: int = None, tool_data: dict = None) -> int:
                 tool_data.get("target_applications"),
                 tool_data.get("personal_notes"),
                 tool_data.get("tags"),
+                user_id or "default",
             ),
         )
         conn.commit()
         return cursor.lastrowid
 
 
-def get_saved_tools(search: str = None, category: str = None) -> list[dict]:
-    """Fetch saved tools with optional search and category filter."""
+def get_saved_tools(search: str = None, category: str = None, user_id: str = None) -> list[dict]:
+    """Fetch saved tools with optional search, category, and user_id filter."""
     query = "SELECT * FROM saved_tools WHERE 1=1"
     params = []
+    if user_id:
+        query += " AND (user_id = ? OR user_id = 'default')"
+        params.append(user_id)
     if search:
         query += " AND (name LIKE ? OR purpose LIKE ? OR personal_notes LIKE ?)"
         like = f"%{search}%"

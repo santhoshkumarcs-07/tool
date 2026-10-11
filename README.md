@@ -73,39 +73,71 @@ Open [http://127.0.0.1:5000](http://127.0.0.1:5000) in your browser.
 
 ---
 
+---
+
 ## Architecture Overview
 
 ```
 tool-discovery/
 ├── app.py                     # Flask application factory & API routes
+├── gunicorn.conf.py           # Production WSGI server configuration
+├── Dockerfile                 # Multi-stage container with FFmpeg & Tesseract
+├── docker-compose.yml         # Container deployment with persistent volume
+├── DEPLOYMENT.md              # Free hosting walkthrough (₹0 budget) & APK build guide
 ├── requirements.txt           # Python dependencies
 ├── .env.example               # Configuration template
-├── index.html                 # Responsive single-page application
+├── index.html                 # Responsive single-page application & Studio
 ├── style.css                  # Dark developer dashboard design
-├── script.js                  # Frontend controllers & state management
+├── script.js                  # Frontend controllers, media recorder, & live polling
+├── android/                   # Native Android WebView APK Project (Kotlin)
+│   ├── app/src/main/
+│   │   ├── AndroidManifest.xml
+│   │   ├── java/com/tooldiscovery/app/MainActivity.kt
+│   │   └── res/ (layouts, themes, colors, icons)
+│   ├── build.gradle.kts
+│   └── gradlew.bat
 ├── services/
 │   ├── llm_provider.py        # OpenRouter exclusive free-model gateway
 │   ├── extraction_service.py  # Pydantic extraction & validation
-│   ├── video_service.py       # URL validation & YouTube caption fetcher
-│   ├── transcription_service.py # Audio extraction & STT engine
+│   ├── video_service.py       # URL validation, caption fetcher, & cross-platform OCR
+│   ├── transcription_service.py # Audio extraction & Faster-Whisper STT
 │   ├── verification_service.py # Official URL & repository verification
 │   ├── configuration_service.py # Claude Code & VS Code install plan adapters
 │   └── companion_service.py   # Local companion execution agent
 ├── database/
-│   ├── db.py                  # Parameterized SQLite query helpers
+│   ├── db.py                  # Parameterized SQLite query helpers with WAL mode
 │   └── schema.sql             # Relational schema (videos, tools, library, jobs)
 ├── tests/
 │   ├── test_phase1.py         # Base routes & database tests
 │   ├── test_phase2.py         # Mocked LLM extraction & validation tests
-│   └── test_new_features.py   # OpenRouter, Video, Verification & Companion tests
+│   └── test_new_features.py   # Free models, OCR, Companion, Security, & Async tests
 └── data/                      # Local SQLite database & uploaded media (git-ignored)
+```
+
+---
+
+## Public Deployment & Android APK
+
+For detailed step-by-step instructions on deploying the application to verified **₹0 free hosting** (Hugging Face Spaces Docker container or Oracle Cloud Always Free VM) and building the companion Android APK, see [DEPLOYMENT.md](file:///e:/content/retriever/tool-discovery/DEPLOYMENT.md).
+
+### Quick Docker Launch
+```bash
+docker-compose up -d --build
+```
+
+### Quick Android Build
+```bash
+cd android
+./gradlew assembleDebug  # Generates android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
 ---
 
 ## Security Model
 
-- **Localhost Binding**: Runs strictly bound to `127.0.0.1`.
+- **Session Isolation**: Each user gets an isolated session space; personal library entries and analysis runs are scoped per user.
 - **SSRF Prevention**: All fetched URLs are validated against private, loopback, and internal CIDR addresses.
+- **Path Traversal Protection**: Media streaming routes strictly sanitize filenames (`os.path.basename`).
+- **Security Headers**: Standard production headers enabled (`X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `X-XSS-Protection`).
 - **Untrusted Media Processing**: Videos, transcripts, and LLM outputs are treated as untrusted input. No arbitrary command execution is permitted.
 - **Companion Safeguards**: Automated actions run only with explicit modal approval, using whitelisted parameter formats and safe process invocations.

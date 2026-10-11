@@ -689,7 +689,49 @@
         </div>
       </div>
     </div>
+  <!-- ─── Privacy & Data Processing Modal ──────────────────────── -->
+  <div class="modal-backdrop" id="privacyModal" role="dialog" aria-modal="true" aria-labelledby="privacyModalTitle">
+    <div class="modal" style="max-width: 640px;">
+      <div class="modal-header">
+        <div>
+          <h3 id="privacyModalTitle">🔒 Privacy & Architecture Notice</h3>
+          <p style="font-size: var(--text-sm); color: var(--text-muted); margin-top: 2px;">
+            How your video data and transcripts are securely processed.
+          </p>
+        </div>
+        <button class="modal-close" id="privacyModalCloseBtn" aria-label="Close modal">✕</button>
+      </div>
+      <div class="modal-body" style="line-height: 1.6; font-size: var(--text-sm);">
+        <div class="notice notice-info mb-3">
+          <strong>100% Server-Side Local Processing:</strong> Audio extraction (FFmpeg), speech-to-text (Faster-Whisper), and frame OCR (Tesseract) run strictly on the server backend, not on your personal device or mobile phone.
+        </div>
+        <h4 style="margin: 1rem 0 0.25rem; font-weight: 600; color: var(--text-primary);">What data is sent to OpenRouter?</h4>
+        <p style="color: var(--text-secondary); margin-bottom: 0.75rem;">
+          Only the generated text transcript is sent to the configured OpenRouter AI gateway for semantic discovery of developer tools, MCP servers, and technical skills. Raw video and audio files are <strong>never</strong> transmitted to third-party AI models.
+        </p>
+        <h4 style="margin: 1rem 0 0.25rem; font-weight: 600; color: var(--text-primary);">Zero Paid Model Guarantee</h4>
+        <p style="color: var(--text-secondary); margin-bottom: 0.75rem;">
+          The backend connects exclusively through OpenRouter's free model pool (<code>openrouter/free</code>, Llama 3.3 70B, Qwen 2.5 Coder, Gemini 2.0 Flash) with automatic zero-cost fallback. Zero credit card or paid API calls are ever made.
+        </p>
+        <h4 style="margin: 1rem 0 0.25rem; font-weight: 600; color: var(--text-primary);">Data Storage & Cleanup</h4>
+        <p style="color: var(--text-secondary); margin-bottom: 0.75rem;">
+          Intermediate audio extracts (WAV) are deleted immediately upon transcription. Stored video uploads and transcripts are isolated per-session and can be deleted from your saved library at any time.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" id="privacyModalDismissBtn">Understood</button>
+      </div>
+    </div>
   </div>
+
+  <!-- Footer Info -->
+  <footer style="text-align: center; padding: 2rem 1rem; color: var(--text-muted); font-size: var(--text-xs); border-top: 1px solid var(--border-color); margin-top: 3rem;">
+    <span>AI Tool Discovery • ScreenApp Studio</span>
+    <span style="margin: 0 0.5rem;">•</span>
+    <a href="javascript:void(0)" id="privacyLink" style="color: var(--primary); text-decoration: underline;">Privacy & Architecture</a>
+    <span style="margin: 0 0.5rem;">•</span>
+    <span>Powered by OpenRouter Free AI Gateway</span>
+  </footer>
 
 </div>
 

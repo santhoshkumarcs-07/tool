@@ -11,16 +11,21 @@ import os
 import sys
 import uuid
 import json
+import logging
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from werkzeug.utils import secure_filename
 
 from flask import (
-    Flask, jsonify, request, send_from_directory, abort
+    Flask, jsonify, request, send_from_directory, abort, session
 )
 from dotenv import load_dotenv
 
 # Load environment variables from .env if present
 load_dotenv()
+
+logger = logging.getLogger(__name__)
+executor = ThreadPoolExecutor(max_workers=2)
 
 from database.db import (
     init_db, get_dashboard_stats, get_recent_videos,
@@ -42,8 +47,13 @@ def create_app(test_config: dict = None) -> Flask:
 
     # Configuration
     app.config["SECRET_KEY"] = os.environ.get(
-        "FLASK_SECRET_KEY", "dev-only-change-me"
-    )
+        "FLASK_SECRET_KEY"
+    ) or os.environ.get("SECRET_KEY") or "prod-secure-token-tool-discovery-2026"
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    if os.environ.get("FLASK_ENV") == "production" or os.environ.get("ENABLE_HTTPS", "").lower() == "true":
+        app.config["SESSION_COOKIE_SECURE"] = True
+
     app.config["MAX_CONTENT_LENGTH"] = (
         int(os.environ.get("MAX_UPLOAD_SIZE_MB", 500)) * 1024 * 1024
     )
@@ -62,6 +72,24 @@ def create_app(test_config: dict = None) -> Flask:
 
     # Initialize database
     init_db()
+
+    # ── Security & Session Isolation Middleware ─────────────────────
+
+    @app.before_request
+    def ensure_user_session():
+        if "user_id" not in session:
+            session["user_id"] = str(uuid.uuid4())
+
+    @app.after_request
+    def set_security_headers(response):
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return response
+
+    def get_current_user_id() -> str:
+        return session.get("user_id") or request.headers.get("X-User-ID") or "default"
 
     # ── Serve the SPA frontend ──────────────────────────────────────
 
@@ -86,7 +114,7 @@ def create_app(test_config: dict = None) -> Flask:
         """Health check endpoint — confirms the server is running."""
         return jsonify({
             "status": "ok",
-            "version": "0.3.0",
+            "version": "0.4.0",
             "gateway": "openrouter",
         })
 
@@ -94,7 +122,8 @@ def create_app(test_config: dict = None) -> Flask:
     def dashboard():
         """Dashboard data: stats and recent analyses."""
         stats = get_dashboard_stats()
-        recent = get_recent_videos(limit=10)
+        user_id = get_current_user_id()
+        recent = get_recent_videos(limit=10, user_id=user_id)
         return jsonify({
             "stats": stats,
             "recent_analyses": recent,
@@ -162,6 +191,140 @@ def create_app(test_config: dict = None) -> Flask:
 
         return {}
 
+    # ── Background Job Executors ────────────────────────────────────
+
+    def execute_url_analysis(video_id: int, url: str) -> dict:
+        """Background executor for video URL analysis."""
+        from services.video_service import process_url
+        from services.extraction_service import extract_video_intelligence
+        from services.verification_service import verify_tool
+
+        try:
+            update_video_status(video_id, "downloading")
+            info = process_url(url)
+            title = info.get("title", url)
+            update_video_fields(video_id, title=title)
+
+            transcript_text = info.get("transcript", "")
+            segments = info.get("segments", [])
+
+            update_video_status(video_id, "analyzing")
+            intel = extract_video_intelligence(transcript_text)
+            tools = intel.get("tools", [])
+            skills = intel.get("skills", [])
+            summary = intel.get("summary", "")
+            key_takeaways = intel.get("key_takeaways", [])
+
+            for tool_data in tools:
+                v_res = verify_tool(tool_data)
+                tool_data["verified"] = v_res["verified"]
+                tool_data["verification_details"] = v_res["verification_details"]
+                tool_id = create_discovered_tool(video_id, tool_data)
+                tool_data["id"] = tool_id
+
+            save_analysis_store(video_id, {
+                "transcript": transcript_text,
+                "segments": segments,
+                "skills": skills,
+                "summary": summary,
+                "key_takeaways": key_takeaways,
+                "video_id_code": info.get("video_id"),
+                "tools": tools,
+            })
+
+            update_video_status(video_id, "completed")
+            return {
+                "video_id": video_id,
+                "title": title,
+                "source_type": info["source_type"],
+                "source_url": url,
+                "tools_count": len(tools),
+                "tools": tools,
+                "skills": skills,
+                "summary": summary,
+                "key_takeaways": key_takeaways,
+                "transcript": transcript_text,
+                "segments": segments,
+            }
+        except Exception as e:
+            logger.exception(f"URL analysis failed for video {video_id}: {e}")
+            update_video_status(video_id, "failed", str(e))
+            raise
+
+    def execute_upload_analysis(video_id: int, upload_path: Path, filename: str, stored_name: str) -> dict:
+        """Background executor for video upload transcription and analysis."""
+        from services.transcription_service import extract_audio, transcribe_audio_file
+        from services.extraction_service import extract_video_intelligence
+        from services.verification_service import verify_tool
+        from services.video_service import extract_video_visual_context
+
+        data_dir = Path(app.config["DATA_DIR_RESOLVED"])
+        audio_dir = data_dir / "audio"
+        audio_dir.mkdir(parents=True, exist_ok=True)
+        audio_path = audio_dir / f"{uuid.uuid4().hex}.wav"
+
+        try:
+            update_video_status(video_id, "transcribing")
+            extract_audio(str(upload_path), str(audio_path))
+            trans_res = transcribe_audio_file(str(audio_path))
+            full_text = trans_res.get("full_text", "")
+            segments = trans_res.get("segments", [])
+
+            # Extract visible code, commands, and tools from video frames
+            visual_ctx = extract_video_visual_context(str(upload_path))
+            if visual_ctx:
+                full_text = full_text + visual_ctx
+
+            update_video_status(video_id, "analyzing")
+            intel = extract_video_intelligence(full_text)
+            tools = intel.get("tools", [])
+            skills = intel.get("skills", [])
+            summary = intel.get("summary", "")
+            key_takeaways = intel.get("key_takeaways", [])
+
+            for tool_data in tools:
+                v_res = verify_tool(tool_data)
+                tool_data["verified"] = v_res["verified"]
+                tool_data["verification_details"] = v_res["verification_details"]
+                tool_id = create_discovered_tool(video_id, tool_data)
+                tool_data["id"] = tool_id
+
+            save_analysis_store(video_id, {
+                "transcript": full_text,
+                "segments": segments,
+                "skills": skills,
+                "summary": summary,
+                "key_takeaways": key_takeaways,
+                "tools": tools,
+            })
+
+            update_video_status(video_id, "completed")
+            return {
+                "video_id": video_id,
+                "title": filename,
+                "source_type": "upload",
+                "stored_filename": stored_name,
+                "media_url": f"/api/media/{stored_name}",
+                "tools_count": len(tools),
+                "tools": tools,
+                "skills": skills,
+                "summary": summary,
+                "key_takeaways": key_takeaways,
+                "transcript": full_text,
+                "segments": segments,
+            }
+        except Exception as e:
+            logger.exception(f"Upload analysis failed for video {video_id}: {e}")
+            update_video_status(video_id, "failed", str(e))
+            raise
+        finally:
+            # Clean up temporary WAV extract to conserve disk space
+            if audio_path and audio_path.exists():
+                try:
+                    audio_path.unlink()
+                except Exception:
+                    pass
+
     # ── Analysis Routes ─────────────────────────────────────────────
 
     @app.route("/api/analyze/text", methods=["POST"])
@@ -179,7 +342,8 @@ def create_app(test_config: dict = None) -> Flask:
         if len(transcript) < 20:
             return jsonify({"error": "Transcript is too short to analyze."}), 400
 
-        video_id = create_video("text", title="Text Analysis")
+        user_id = get_current_user_id()
+        video_id = create_video("text", title="Text Analysis", user_id=user_id)
         update_video_status(video_id, "analyzing")
 
         try:
@@ -238,8 +402,6 @@ def create_app(test_config: dict = None) -> Flask:
     def analyze_url():
         """Visit video URL, transcribe speech, and discover tools & skills."""
         from services.video_service import process_url, VideoIngestionError
-        from services.extraction_service import extract_video_intelligence
-        from services.verification_service import verify_tool
         from services.llm_provider import LLMError
 
         data = request.get_json(silent=True)
@@ -247,75 +409,40 @@ def create_app(test_config: dict = None) -> Flask:
             return jsonify({"error": "Video URL is required."}), 400
 
         url = str(data["url"]).strip()
+        user_id = get_current_user_id()
+        source_type = "instagram" if "instagram" in url else "youtube"
+        video_id = create_video(source_type, source_url=url, title=url, user_id=user_id)
 
-        try:
-            info = process_url(url)
-        except VideoIngestionError as e:
-            return jsonify({"error": str(e)}), 400
-        except Exception as e:
-            return jsonify({"error": f"URL processing error: {str(e)}"}), 500
+        is_async = (
+            request.args.get("async", "").lower() in ("true", "1") or
+            request.headers.get("X-Async-Job", "").lower() in ("true", "1")
+        )
 
-        title = info.get("title", url)
-        video_id = create_video(info["source_type"], source_url=url, title=title)
-        update_video_status(video_id, "analyzing")
-
-        transcript_text = info.get("transcript", "")
-        segments = info.get("segments", [])
-
-        try:
-            intel = extract_video_intelligence(transcript_text)
-            tools = intel.get("tools", [])
-            skills = intel.get("skills", [])
-            summary = intel.get("summary", "")
-            key_takeaways = intel.get("key_takeaways", [])
-
-            for tool_data in tools:
-                v_res = verify_tool(tool_data)
-                tool_data["verified"] = v_res["verified"]
-                tool_data["verification_details"] = v_res["verification_details"]
-                tool_id = create_discovered_tool(video_id, tool_data)
-                tool_data["id"] = tool_id
-
-            save_analysis_store(video_id, {
-                "transcript": transcript_text,
-                "segments": segments,
-                "skills": skills,
-                "summary": summary,
-                "key_takeaways": key_takeaways,
-                "video_id_code": info.get("video_id"),
-                "tools": tools,
-            })
-
-            update_video_status(video_id, "completed")
+        if is_async:
+            executor.submit(execute_url_analysis, video_id, url)
             return jsonify({
                 "video_id": video_id,
-                "title": title,
-                "source_type": info["source_type"],
+                "job_id": video_id,
+                "status": "pending",
                 "source_url": url,
-                "tools_count": len(tools),
-                "tools": tools,
-                "skills": skills,
-                "summary": summary,
-                "key_takeaways": key_takeaways,
-                "transcript": transcript_text,
-                "segments": segments,
-            })
+                "message": "Video URL queued for background analysis.",
+            }), 202
+
+        try:
+            result = execute_url_analysis(video_id, url)
+            return jsonify(result), 200
+        except VideoIngestionError as e:
+            return jsonify({"error": str(e)}), 400
         except LLMError as e:
-            update_video_status(video_id, "failed", str(e))
             return jsonify({"error": str(e)}), 502
         except Exception as e:
-            update_video_status(video_id, "failed", str(e))
-            return jsonify({"error": str(e)}), 500
+            return jsonify({"error": f"URL analysis error: {str(e)}"}), 500
 
     @app.route("/api/analyze/upload", methods=["POST"])
     def analyze_upload():
         """Upload and transcribe local video or screen recording."""
         from services.video_service import validate_uploaded_video, VideoIngestionError
-        from services.transcription_service import (
-            extract_audio, transcribe_audio_file, TranscriptionError
-        )
-        from services.extraction_service import extract_video_intelligence
-        from services.verification_service import verify_tool
+        from services.transcription_service import TranscriptionError
         from services.llm_provider import LLMError
 
         if "video" not in request.files:
@@ -343,76 +470,38 @@ def create_app(test_config: dict = None) -> Flask:
                 upload_path.unlink()
             return jsonify({"error": str(e)}), 400
 
-        video_id = create_video("upload", original_filename=filename, stored_filename=stored_name, title=filename)
-        update_video_status(video_id, "transcribing")
+        user_id = get_current_user_id()
+        video_id = create_video("upload", original_filename=filename, stored_filename=stored_name, title=filename, user_id=user_id)
 
-        audio_dir = data_dir / "audio"
-        audio_dir.mkdir(parents=True, exist_ok=True)
-        audio_path = audio_dir / f"{uuid.uuid4().hex}.wav"
+        is_async = (
+            request.args.get("async", "").lower() in ("true", "1") or
+            request.headers.get("X-Async-Job", "").lower() in ("true", "1")
+        )
 
-        try:
-            extract_audio(str(upload_path), str(audio_path))
-            trans_res = transcribe_audio_file(str(audio_path))
-            full_text = trans_res.get("full_text", "")
-            segments = trans_res.get("segments", [])
-
-            # Extract visible code, commands, and tools from video frames
-            from services.video_service import extract_video_visual_context
-            visual_ctx = extract_video_visual_context(str(upload_path))
-            if visual_ctx:
-                full_text = full_text + visual_ctx
-        except TranscriptionError as e:
-            update_video_status(video_id, "failed", str(e))
-            return jsonify({"error": str(e)}), 400
-        except Exception as e:
-            update_video_status(video_id, "failed", str(e))
-            return jsonify({"error": f"Transcription error: {str(e)}"}), 500
-
-        update_video_status(video_id, "analyzing")
-        try:
-            intel = extract_video_intelligence(full_text)
-            tools = intel.get("tools", [])
-            skills = intel.get("skills", [])
-            summary = intel.get("summary", "")
-            key_takeaways = intel.get("key_takeaways", [])
-
-            for tool_data in tools:
-                v_res = verify_tool(tool_data)
-                tool_data["verified"] = v_res["verified"]
-                tool_data["verification_details"] = v_res["verification_details"]
-                tool_id = create_discovered_tool(video_id, tool_data)
-                tool_data["id"] = tool_id
-
-            save_analysis_store(video_id, {
-                "transcript": full_text,
-                "segments": segments,
-                "skills": skills,
-                "summary": summary,
-                "key_takeaways": key_takeaways,
-                "tools": tools,
-            })
-
-            update_video_status(video_id, "completed")
+        if is_async:
+            executor.submit(execute_upload_analysis, video_id, upload_path, filename, stored_name)
             return jsonify({
                 "video_id": video_id,
+                "job_id": video_id,
+                "status": "pending",
                 "title": filename,
                 "source_type": "upload",
                 "stored_filename": stored_name,
                 "media_url": f"/api/media/{stored_name}",
-                "tools_count": len(tools),
-                "tools": tools,
-                "skills": skills,
-                "summary": summary,
-                "key_takeaways": key_takeaways,
-                "transcript": full_text,
-                "segments": segments,
-            })
+                "message": "Video uploaded and processing started in background.",
+            }), 202
+
+        try:
+            result = execute_upload_analysis(video_id, upload_path, filename, stored_name)
+            return jsonify(result), 200
+        except VideoIngestionError as e:
+            return jsonify({"error": str(e)}), 400
+        except TranscriptionError as e:
+            return jsonify({"error": str(e)}), 400
         except LLMError as e:
-            update_video_status(video_id, "failed", str(e))
             return jsonify({"error": str(e)}), 502
         except Exception as e:
-            update_video_status(video_id, "failed", str(e))
-            return jsonify({"error": str(e)}), 500
+            return jsonify({"error": f"Upload processing error: {str(e)}"}), 500
 
     @app.route("/api/analysis/<int:video_id>")
     def get_analysis(video_id):
@@ -466,10 +555,14 @@ def create_app(test_config: dict = None) -> Flask:
 
     @app.route("/api/media/<path:filename>")
     def serve_media(filename):
-        """Stream stored recorded / uploaded videos to browser player."""
+        """Stream stored recorded / uploaded videos to browser player safely."""
+        # Sanitize against path traversal attacks
+        safe_name = os.path.basename(filename)
+        if ".." in filename or safe_name != filename:
+            abort(400)
         data_dir = Path(app.config["DATA_DIR_RESOLVED"])
         uploads_dir = data_dir / "uploads"
-        return send_from_directory(uploads_dir, filename)
+        return send_from_directory(uploads_dir, safe_name)
 
     @app.route("/api/video/ask", methods=["POST"])
     def ask_video():
@@ -507,9 +600,11 @@ def create_app(test_config: dict = None) -> Flask:
         """List saved tools with optional search and category filter."""
         search = request.args.get("search", "").strip()
         category = request.args.get("category", "").strip()
+        user_id = get_current_user_id()
         tools = get_saved_tools(
             search=search or None,
             category=category or None,
+            user_id=user_id,
         )
         return jsonify({"tools": tools})
 
@@ -520,6 +615,7 @@ def create_app(test_config: dict = None) -> Flask:
         if not data:
             return jsonify({"error": "No data provided."}), 400
 
+        user_id = get_current_user_id()
         discovered_id = data.get("discovered_tool_id")
         if discovered_id:
             dt = get_discovered_tool(discovered_id)
@@ -537,11 +633,11 @@ def create_app(test_config: dict = None) -> Flask:
                 "setup_steps": dt.get("setup_steps"),
                 "target_applications": dt.get("target_applications"),
             }
-            saved_id = save_tool(discovered_tool_id=discovered_id, tool_data=tool_data)
+            saved_id = save_tool(discovered_tool_id=discovered_id, tool_data=tool_data, user_id=user_id)
         else:
             if not data.get("name"):
                 return jsonify({"error": "Tool name is required."}), 400
-            saved_id = save_tool(tool_data=data)
+            saved_id = save_tool(tool_data=data, user_id=user_id)
 
         return jsonify({"id": saved_id, "message": "Tool saved to library."})
 

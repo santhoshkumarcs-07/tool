@@ -225,8 +225,9 @@
         updatePipelineStage("validate", "completed");
         updatePipelineStage("ingest", "completed");
         updatePipelineStage("transcribe", "active");
-        response = await fetch(`${API}/api/analyze/upload`, {
+        response = await fetch(`${API}/api/analyze/upload?async=1`, {
           method: "POST",
+          headers: { "X-Async-Job": "1" },
           body: formData,
         });
       } else if (data.source_type === "text") {
@@ -242,9 +243,9 @@
       } else {
         updatePipelineStage("validate", "active");
         updatePipelineStage("ingest", "active");
-        response = await fetch(`${API}/api/analyze/url`, {
+        response = await fetch(`${API}/api/analyze/url?async=1`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "X-Async-Job": "1" },
           body: JSON.stringify(data),
         });
       }
@@ -256,6 +257,12 @@
 
       const result = await response.json();
       currentAnalysisId = result.video_id;
+
+      // If job is queued in background, begin status polling
+      if (response.status === 202 || (result.status && result.status !== "completed")) {
+        pollAnalysisStatus(result.video_id);
+        return;
+      }
 
       $$(".pipeline-stage").forEach((s) => {
         updatePipelineStage(s.dataset.stage, "completed");
@@ -269,6 +276,59 @@
     } catch (err) {
       handleProcessingError(err.message);
     }
+  }
+
+  async function pollAnalysisStatus(videoId) {
+    let attempts = 0;
+    const maxAttempts = 180; // 6 minutes max polling
+    const interval = setInterval(async () => {
+      attempts++;
+      if (attempts > maxAttempts) {
+        clearInterval(interval);
+        handleProcessingError("Analysis timed out. Please try again or check the dashboard.");
+        return;
+      }
+
+      try {
+        const resp = await fetch(`${API}/api/analysis/${videoId}`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+
+        if (data.status === "downloading") {
+          updatePipelineStage("validate", "completed");
+          updatePipelineStage("ingest", "active");
+          $("#processingBadge").className = "badge badge-pending";
+          $("#processingBadge").textContent = "Downloading Video...";
+        } else if (data.status === "transcribing") {
+          updatePipelineStage("validate", "completed");
+          updatePipelineStage("ingest", "completed");
+          updatePipelineStage("transcribe", "active");
+          $("#processingBadge").className = "badge badge-pending";
+          $("#processingBadge").textContent = "Transcribing Speech & Frames...";
+        } else if (data.status === "analyzing") {
+          updatePipelineStage("validate", "completed");
+          updatePipelineStage("ingest", "completed");
+          updatePipelineStage("transcribe", "completed");
+          updatePipelineStage("analyze", "active");
+          $("#processingBadge").className = "badge badge-pending";
+          $("#processingBadge").textContent = "Discovering AI Tools & Skills...";
+        } else if (data.status === "completed") {
+          clearInterval(interval);
+          $$(".pipeline-stage").forEach((s) => {
+            updatePipelineStage(s.dataset.stage, "completed");
+          });
+          $("#processingBadge").className = "badge badge-success";
+          $("#processingBadge").textContent = "Completed";
+          showToast(`Found ${data.tools_count || 0} tool(s)!`, "success");
+          setTimeout(() => showResults(data), 400);
+        } else if (data.status === "failed") {
+          clearInterval(interval);
+          handleProcessingError(data.error_message || "Video analysis failed.");
+        }
+      } catch (e) {
+        console.debug("Status polling error:", e);
+      }
+    }, 2000);
   }
 
   function showProcessing() {
@@ -1035,6 +1095,20 @@
         openInstallModal(tool);
       }
     });
+
+    // Privacy & Architecture Notice Modal
+    const privModal = $("#privacyModal");
+    const privLink = $("#privacyLink");
+    const privClose = $("#privacyModalCloseBtn");
+    const privDismiss = $("#privacyModalDismissBtn");
+    if (privLink && privModal) {
+      privLink.addEventListener("click", () => privModal.classList.add("open"));
+      if (privClose) privClose.addEventListener("click", () => privModal.classList.remove("open"));
+      if (privDismiss) privDismiss.addEventListener("click", () => privModal.classList.remove("open"));
+      privModal.addEventListener("click", (e) => {
+        if (e.target === e.currentTarget) privModal.classList.remove("open");
+      });
+    }
   }
 
   function openToolModal(tool, context) {

@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">AI Tool Discovery</string>
+    <!-- Configure your public hosted HTTPS URL here -->
+    <!-- For local Android Emulator testing use http://10.0.2.2:5000 -->
+    <string name="backend_base_url">http://10.0.2.2:5000</string>
+
+    <string name="error_offline_title">No Internet Connection</string>
+    <string name="error_offline_message">Unable to connect to the Tool Discovery server. Please check your internet connection or verify the server is running.</string>
+    <string name="btn_retry">Retry Connection</string>
+    <string name="loading_message">Connecting to ScreenApp AI Studio…</string>
+</resources>

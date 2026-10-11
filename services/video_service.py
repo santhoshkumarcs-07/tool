@@ -342,10 +342,34 @@ def validate_uploaded_video(filename: str, file_size_bytes: int, max_size_mb: in
         )
 
 
+def recognize_frame_text(frame) -> str:
+    """
+    Recognize text in a video frame using available local OCR engine.
+    Tries pytesseract (standard cross-platform / Linux) first, then winocr (Windows hardware OCR).
+    Returns recognized text string, or empty string if no OCR engine is available.
+    """
+    try:
+        import pytesseract
+        text = pytesseract.image_to_string(frame)
+        if text and text.strip():
+            return text.strip()
+    except Exception:
+        pass
+
+    try:
+        import winocr
+        res = winocr.recognize_cv2_sync(frame)
+        return (res.get("text") or "").strip()
+    except Exception:
+        pass
+
+    return ""
+
+
 def extract_video_visual_context(video_path: str, max_frames: int = 15, interval_seconds: float = 15.0) -> str:
     """
     Extract visible on-screen text, code, terminal commands, and tool names
-    from video keyframes using local hardware OCR (winocr/OpenCV).
+    from video keyframes using local hardware OCR (pytesseract on Linux or winocr on Windows).
     Runs silently in the background and returns formatted context to enrich the transcript.
     """
     if not os.path.exists(video_path):
@@ -353,7 +377,6 @@ def extract_video_visual_context(video_path: str, max_frames: int = 15, interval
 
     try:
         import cv2
-        import winocr
 
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
@@ -393,8 +416,7 @@ def extract_video_visual_context(video_path: str, max_frames: int = 15, interval
                     scale = 1280 / w
                     frame = cv2.resize(frame, (1280, int(h * scale)))
 
-                res = winocr.recognize_cv2_sync(frame)
-                raw_text = (res.get("text") or "").strip()
+                raw_text = recognize_frame_text(frame)
                 if not raw_text or len(raw_text) < 4:
                     continue
 

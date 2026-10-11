@@ -3,6 +3,7 @@
 -- Videos and analysis jobs
 CREATE TABLE IF NOT EXISTS videos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT DEFAULT 'default',
     source_type TEXT NOT NULL CHECK(source_type IN ('youtube', 'instagram', 'upload', 'text')),
     source_url TEXT,
     original_filename TEXT,
@@ -44,6 +45,7 @@ CREATE TABLE IF NOT EXISTS discovered_tools (
 -- Personal library of saved tools
 CREATE TABLE IF NOT EXISTS saved_tools (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT DEFAULT 'default',
     discovered_tool_id INTEGER,
     name TEXT NOT NULL,
     category TEXT,
