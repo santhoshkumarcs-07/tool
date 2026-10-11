@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="ScreenApp Tool Discovery — Video AI transcription, skill discovery, and interactive assistant to cut watch time.">
+  <title>ScreenApp — Tool Discovery & Video AI</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+</head>
+<body>
+
+<div class="app-container">
+
+  <!-- ─── Top Navigation ───────────────────────────────────── -->
+  <nav class="top-nav" role="navigation" aria-label="Main navigation">
+    <div class="nav-brand">
+      <div class="brand-icon" aria-hidden="true">⚡</div>
+      <div class="brand-text">
+        <span class="brand-name">ScreenApp</span>
+        <span class="brand-badge">AI Studio</span>
+      </div>
+    </div>
+
+    <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Toggle navigation menu" aria-expanded="false">☰</button>
+
+    <ul class="nav-links" id="navLinks" role="menubar">
+      <li role="none"><button role="menuitem" class="active" data-page="dashboard" id="navDashboard">Dashboard</button></li>
+      <li role="none"><button role="menuitem" data-page="analyze" id="navAnalyze">Studio / Analyze</button></li>
+      <li role="none"><button role="menuitem" data-page="library" id="navLibrary">Saved Library</button></li>
+      <li role="none"><button role="menuitem" data-page="configurations" id="navConfigurations">1-Click Installs</button></li>
+      <li role="none"><button role="menuitem" data-page="settings" id="navSettings">Settings</button></li>
+    </ul>
+
+    <!-- Quick Action In Header -->
+    <div class="nav-actions">
+      <button class="btn btn-record btn-sm" id="navQuickRecordBtn">
+        <span class="record-pulse-dot"></span> Record Screen
+      </button>
+    </div>
+  </nav>
+
+  <!-- ─── Main Content ─────────────────────────────────────── -->
+  <main class="main-content">
+
+    <!-- ═══ DASHBOARD ══════════════════════════════════════════ -->
+    <section class="page-section active" id="pageDashboard">
+      <!-- ScreenApp Hero Banner -->
+      <div class="dashboard-hero">
+        <div class="hero-content">
+          <span class="hero-tag">ScreenApp • Video & Skill Intelligence</span>
+          <h2 class="hero-title">Transcribe any video & extract technical skills in seconds</h2>
+          <p class="hero-subtitle">
+            Skip hours of video. ScreenApp accurately transcribes speech, extracts skills and tools shown in the video, and provides interactive AI Q&A so you get all the knowledge without the watch time.
+          </p>
+          <div class="hero-actions flex gap-3 flex-wrap">
+            <button class="btn btn-record btn-lg" id="heroRecordBtn">
+              <span class="record-pulse-dot"></span> Record Screen & Audio
+            </button>
+            <button class="btn btn-primary btn-lg" id="dashAnalyzeBtn">
+              🔗 Analyze Video Link / File
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stats Row -->
+      <div class="stats-grid" id="statsGrid">
+        <div class="stat-card">
+          <div class="stat-icon">🎬</div>
+          <div class="stat-value" id="statTotalAnalyses">—</div>
+          <div class="stat-label">Videos Processed</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">⏱️</div>
+          <div class="stat-value" id="statCompleted">~4.5 hrs</div>
+          <div class="stat-label">Watch Time Saved</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">🧠</div>
+          <div class="stat-value" id="statDiscovered">—</div>
+          <div class="stat-label">Skills & Tools Found</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">💾</div>
+          <div class="stat-value" id="statSaved">—</div>
+          <div class="stat-label">Saved to Library</div>
+        </div>
+      </div>
+
+      <!-- Recent Analyses -->
+      <div class="card mt-6">
+        <div class="card-header flex items-center justify-between">
+          <h3 class="card-title">Recent Video Transcriptions & Analyses</h3>
+          <span class="text-sm text-secondary">Click any video to view transcript & skills</span>
+        </div>
+        <div id="recentAnalysesList">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ ANALYZE / STUDIO ════════════════════════════════════ -->
+    <section class="page-section" id="pageAnalyze">
+      <div class="section-header">
+        <h2>Video Ingestion & Transcription Studio</h2>
+        <p>Record your screen, import a YouTube video, or upload media to transcribe speech and extract skills.</p>
+      </div>
+
+      <!-- Input Tabs -->
+      <div class="tabs" role="tablist" aria-label="Analysis input methods">
+        <button class="tab-btn active" role="tab" data-tab="tabRecord" aria-selected="true" id="tabBtnRecord">🔴 Record Screen</button>
+        <button class="tab-btn" role="tab" data-tab="tabUrl" aria-selected="false" id="tabBtnUrl">🔗 Video URL</button>
+        <button class="tab-btn" role="tab" data-tab="tabUpload" aria-selected="false" id="tabBtnUpload">📁 Upload Video</button>
+        <button class="tab-btn" role="tab" data-tab="tabText" aria-selected="false" id="tabBtnText">📝 Paste Transcript</button>
+      </div>
+
+      <!-- Tab: In-Browser Screen Recorder -->
+      <div class="tab-panel active" id="tabRecord" role="tabpanel">
+        <div class="card recorder-studio-card">
+          <div class="recorder-hero-box">
+            <div class="recorder-badge">WebRTC In-Browser Studio</div>
+            <h3>Record your screen & audio directly in browser</h3>
+            <p class="text-secondary max-w-xl mb-4">
+              Capture your desktop, application window, browser tab, and microphone with zero extensions. When you finish recording, ScreenApp transcribes the spoken speech and extracts all demonstrated skills.
+            </p>
+            <div class="flex items-center gap-3 flex-wrap">
+              <button class="btn btn-record btn-lg" id="btnLaunchScreenRecorder">
+                <span class="record-pulse-dot"></span> Launch Screen Recorder
+              </button>
+              <span class="text-sm text-secondary">Supports system audio, microphone, and 1080p stream</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab: URL Input -->
+      <div class="tab-panel" id="tabUrl" role="tabpanel">
+        <div class="card">
+          <div class="form-group">
+            <label class="form-label" for="videoUrlInput">YouTube or Video URL</label>
+            <input type="url" class="form-input" id="videoUrlInput"
+                   placeholder="https://www.youtube.com/watch?v=... or YouTube Shorts URL"
+                   aria-describedby="urlHelp">
+            <p class="form-help" id="urlHelp">
+              ScreenApp visits the video, transcribes spoken speech using faster-whisper, and identifies all technical skills and tools to reduce your watch time.
+            </p>
+          </div>
+          <button class="btn btn-primary btn-lg" id="analyzeUrlBtn">
+            ⚡ Transcribe Video & Extract Skills
+          </button>
+        </div>
+      </div>
+
+      <!-- Tab: Upload -->
+      <div class="tab-panel" id="tabUpload" role="tabpanel">
+        <div class="card">
+          <div class="upload-zone" id="uploadZone" tabindex="0" role="button" aria-label="Click or drag to upload video">
+            <div class="upload-icon">📁</div>
+            <p style="font-weight: 600; font-size: 1.05rem;">Drag & drop a video file or click to browse</p>
+            <p class="upload-hint">MP4, WebM, MOV, MKV — up to <span id="maxUploadSize">500</span> MB, <span id="maxDuration">20</span> min</p>
+          </div>
+          <input type="file" id="videoFileInput" accept="video/*" class="hidden" aria-label="Upload video file">
+          <div id="uploadFileInfo" class="hidden mt-4">
+            <p id="uploadFileName" style="font-weight: 600; color: var(--accent-purple);"></p>
+            <button class="btn btn-primary btn-lg mt-3" id="analyzeUploadBtn">
+              ⚡ Transcribe Upload & Extract Skills
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab: Paste Transcript -->
+      <div class="tab-panel" id="tabText" role="tabpanel">
+        <div class="card">
+          <div class="notice notice-info">
+            <span>ℹ️</span>
+            <span>Already have transcript text? Paste it below to immediately extract technical skills, tools, and executive summaries.</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="transcriptInput">Transcript Text</label>
+            <textarea class="form-textarea" id="transcriptInput" rows="10"
+                      placeholder="Paste transcript text here..."></textarea>
+          </div>
+          <button class="btn btn-primary btn-lg" id="analyzeTextBtn">
+            ⚡ Extract Skills & Tools from Text
+          </button>
+        </div>
+      </div>
+
+      <!-- Processing Status (shown during analysis) -->
+      <div class="card hidden mt-4" id="processingCard">
+        <div class="card-header">
+          <h3 class="card-title">Processing Video with ScreenApp AI</h3>
+          <span class="badge badge-pending" id="processingBadge">In Progress</span>
+        </div>
+        <div class="pipeline-stages" id="pipelineStages">
+          <div class="pipeline-stage" data-stage="validate">
+            <div class="stage-indicator">1</div>
+            <div class="stage-text">
+              <div class="stage-title">Validating Input</div>
+              <div class="stage-detail">Checking media format and source accessibility</div>
+            </div>
+          </div>
+          <div class="pipeline-stage" data-stage="ingest">
+            <div class="stage-indicator">2</div>
+            <div class="stage-text">
+              <div class="stage-title">Ingesting Video</div>
+              <div class="stage-detail">Fetching video stream or audio tracks</div>
+            </div>
+          </div>
+          <div class="pipeline-stage" data-stage="transcribe">
+            <div class="stage-indicator">3</div>
+            <div class="stage-text">
+              <div class="stage-title">Transcribing Spoken Voice</div>
+              <div class="stage-detail">Converting speech into timestamped text via faster-whisper</div>
+            </div>
+          </div>
+          <div class="pipeline-stage" data-stage="analyze">
+            <div class="stage-indicator">4</div>
+            <div class="stage-text">
+              <div class="stage-title">Extracting Skills & Tools</div>
+              <div class="stage-detail">Analyzing concepts and developer tools to reduce watch time</div>
+            </div>
+          </div>
+          <div class="pipeline-stage" data-stage="verify">
+            <div class="stage-indicator">5</div>
+            <div class="stage-text">
+              <div class="stage-title">Verifying Ecosystem Links</div>
+              <div class="stage-detail">Checking repositories and official documentation</div>
+            </div>
+          </div>
+          <div class="pipeline-stage" data-stage="complete">
+            <div class="stage-indicator">6</div>
+            <div class="stage-text">
+              <div class="stage-title">Complete</div>
+              <div class="stage-detail">Opening ScreenApp video intelligence studio</div>
+            </div>
+          </div>
+        </div>
+        <div id="processingError" class="hidden notice notice-error mt-4"></div>
+      </div>
+    </section>
+
+    <!-- ═══ RESULTS / SCREENAPP STUDIO ═════════════════════════ -->
+    <section class="page-section" id="pageResults">
+      <!-- Studio Header -->
+      <div class="studio-header">
+        <div class="studio-header-left">
+          <div class="flex items-center gap-2 mb-2 flex-wrap">
+            <span class="badge badge-source" id="studioSourceBadge">YouTube</span>
+            <span class="badge badge-time-saved" id="studioTimeSavedBadge">⏱️ ~15 min watch time saved</span>
+          </div>
+          <h2 id="studioVideoTitle" class="studio-title">Video Analysis</h2>
+          <p id="resultsSubtitle" class="text-secondary text-sm">Discovered skills, transcript, and developer tools</p>
+        </div>
+        <div class="studio-header-right flex items-center gap-2 flex-wrap">
+          <button class="btn btn-secondary btn-sm" id="studioCopyTranscriptBtn">📋 Copy Transcript</button>
+          <button class="btn btn-secondary btn-sm" id="studioExportNotesBtn">📥 Export Notes (MD)</button>
+          <button class="btn btn-primary btn-sm" id="backToAnalyzeBtn">← New Video</button>
+        </div>
+      </div>
+
+      <!-- Studio Dual Column Layout -->
+      <div class="studio-grid">
+        <!-- Left Column: Video Player & Overview -->
+        <div class="studio-left-col">
+          <!-- Video Player Card -->
+          <div class="card studio-player-card">
+            <div class="player-wrapper" id="studioPlayerWrapper">
+              <!-- Video player or YouTube iframe dynamically rendered -->
+              <div id="studioVideoPlaceholder" class="player-placeholder">
+                <div class="player-icon">🎬</div>
+                <p>Text Transcript Analysis</p>
+              </div>
+            </div>
+            <div class="player-playback-info" id="playerPlaybackInfo">
+              <span id="playerCurrentTime" class="playback-timer">00:00</span>
+              <span class="text-muted text-xs">/ Click any timestamp to jump player</span>
+            </div>
+          </div>
+
+          <!-- Executive Summary & Takeaways -->
+          <div class="card mt-4">
+            <div class="card-header">
+              <h3 class="card-title">📋 Executive Summary</h3>
+            </div>
+            <p id="studioSummaryText" class="studio-summary-text text-secondary mb-4">
+              Analyzing video content...
+            </p>
+            <div class="card-subtitle-divider">Key Takeaways</div>
+            <ul id="studioKeyTakeawaysList" class="studio-takeaways-list">
+              <!-- Populated by JS -->
+            </ul>
+            <div class="mt-4 pt-3 flex items-center justify-between" style="border-top: 1px solid var(--border-subtle);">
+              <span class="text-xs text-secondary">Looking for spoken dialogue?</span>
+              <button class="btn btn-secondary btn-sm" id="btnJumpToTranscript">📝 View Interactive Transcript</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: ScreenApp Intelligence Tabs -->
+        <div class="studio-right-col">
+          <div class="card studio-tabs-card">
+            <div class="studio-tabs-nav" role="tablist">
+              <button class="studio-tab-btn active" data-studiotab="studiotabTranscript" id="tabBtnTranscript">
+                📝 Transcript (<span id="studioTranscriptWordCount">0 words</span>)
+              </button>
+              <button class="studio-tab-btn" data-studiotab="studiotabSkills" id="tabBtnSkills">
+                🧠 Skills Taught (<span id="studioSkillsCount">0</span>)
+              </button>
+              <button class="studio-tab-btn" data-studiotab="studiotabTools" id="tabBtnTools">
+                🛠️ Discovered Tools (<span id="studioToolsCount">0</span>)
+              </button>
+              <button class="studio-tab-btn" data-studiotab="studiotabAsk" id="tabBtnAsk">
+                💬 Ask Video AI
+              </button>
+            </div>
+
+            <!-- Tab Content: Interactive Transcript (Active First) -->
+            <div class="studio-tab-panel active" id="studiotabTranscript">
+              <div class="transcript-toolbar flex items-center justify-between gap-2 mb-3">
+                <input type="search" class="form-input text-sm" id="transcriptSearchInput" placeholder="Search transcript words..." aria-label="Search transcript">
+                <button class="btn btn-secondary btn-sm" id="btnCopyTranscriptPanel">📋 Copy Text</button>
+              </div>
+              <div class="transcript-scroll-area" id="studioTranscriptScrollArea">
+                <!-- Timestamped interactive segments populated by JS -->
+              </div>
+            </div>
+
+            <!-- Tab Content: Skills -->
+            <div class="studio-tab-panel" id="studiotabSkills">
+              <div class="studio-panel-intro">
+                Technical skills, concepts, and capabilities taught or demonstrated in this video.
+              </div>
+              <div id="studioSkillsList" class="skills-grid">
+                <!-- Populated by JS -->
+              </div>
+            </div>
+
+            <!-- Tab Content: Ask Video AI -->
+            <div class="studio-tab-panel" id="studiotabAsk">
+              <div class="studio-panel-intro">
+                Ask anything about what was spoken or demonstrated. The AI answers directly from the transcript with timestamp citations to save your watch time.
+              </div>
+              <div class="ask-chat-history" id="askChatHistory">
+                <div class="ask-ai-msg">
+                  <div class="ask-msg-bubble">
+                    👋 Ask me anything about this video (e.g. <em>"What were the setup steps?"</em> or <em>"What libraries were used?"</em>). I'll find it with timestamps so you don't have to watch the entire video!
+                  </div>
+                </div>
+              </div>
+              <form class="ask-chat-input-form" id="askChatForm">
+                <input type="text" class="form-input" id="askQuestionInput" placeholder="Ask a question about this video..." autocomplete="off">
+                <button type="submit" class="btn btn-primary" id="askSubmitBtn">Ask AI</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── Discovered Tools Section (Always Visible Alongside Studio) ─── -->
+      <div class="card mt-6" id="discoveredToolsCardSection">
+        <div class="card-header flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h3 class="card-title" style="display:flex;align-items:center;gap:8px;">
+              <span>🛠️ Discovered Tools & 1-Click Installs</span>
+              <span class="badge badge-teal" id="studioToolsHeaderBadge">0 Tools</span>
+            </h3>
+            <p class="text-sm text-secondary">
+              Developer tools, AI applications, MCP servers, and libraries detected in this video with instant setup into Claude Code & VS Code.
+            </p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-muted">Click any tool card to view capabilities & setup steps</span>
+          </div>
+        </div>
+        <div id="resultsToolCards" class="tool-cards-grid mt-4">
+          <!-- Populated by JS -->
+        </div>
+        <div id="resultsEmpty" class="empty-state hidden">
+          <div class="empty-icon">🔎</div>
+          <h3>No standalone tools discovered</h3>
+          <p>The analysis identified technical skills and workflows in the video transcript.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ LIBRARY ════════════════════════════════════════════ -->
+    <section class="page-section" id="pageLibrary">
+      <div class="section-header">
+        <h2>Tool Library</h2>
+        <p>Your saved collection of discovered tools.</p>
+      </div>
+
+      <div class="search-bar">
+        <span class="search-icon">🔍</span>
+        <input type="search" id="librarySearchInput" placeholder="Search tools by name, purpose, or notes..." aria-label="Search library">
+      </div>
+
+      <div class="filter-bar" id="libraryFilterBar">
+        <button class="filter-chip active" data-category="all">All</button>
+        <button class="filter-chip" data-category="ai-tool">AI Tool</button>
+        <button class="filter-chip" data-category="dev-tool">Dev Tool</button>
+        <button class="filter-chip" data-category="mcp-server">MCP Server</button>
+        <button class="filter-chip" data-category="library">Library</button>
+        <button class="filter-chip" data-category="agent">Coding Agent</button>
+        <button class="filter-chip" data-category="automation">Automation</button>
+        <button class="filter-chip" data-category="app">App</button>
+      </div>
+
+      <div id="libraryToolCards" class="tool-cards-grid">
+        <!-- Populated by JS -->
+      </div>
+
+      <div id="libraryEmpty" class="empty-state">
+        <div class="empty-icon">📚</div>
+        <h3>Your library is empty</h3>
+        <p>Analyze a video and save interesting tools to build your collection.</p>
+        <button class="btn btn-primary mt-4" id="libraryAnalyzeBtn">🎬 Analyze a Video</button>
+      </div>
+    </section>
+
+    <!-- ═══ CONFIGURATIONS ═════════════════════════════════════ -->
+    <section class="page-section" id="pageConfigurations">
+      <div class="section-header">
+        <h2>Configuration Generator</h2>
+        <p>Generate setup instructions for your saved tools.</p>
+      </div>
+
+      <div class="card">
+        <div class="form-group">
+          <label class="form-label" for="configToolSelect">Select Tool</label>
+          <select class="form-select" id="configToolSelect" aria-label="Select a tool to configure">
+            <option value="">Choose a saved tool…</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="configTargetSelect">Target Application</label>
+          <select class="form-select" id="configTargetSelect" aria-label="Select target application">
+            <option value="">Choose target…</option>
+            <option value="vscode">VS Code</option>
+            <option value="claude-code">Claude Code</option>
+          </select>
+        </div>
+
+        <button class="btn btn-primary" id="generateConfigBtn" disabled>
+          ⚙️ Generate Configuration
+        </button>
+      </div>
+
+      <!-- Config Output -->
+      <div class="card hidden mt-4" id="configOutputCard">
+        <div class="card-header">
+          <h3 class="card-title" id="configOutputTitle">Configuration</h3>
+          <button class="btn btn-sm btn-secondary" id="copyConfigBtn">📋 Copy</button>
+        </div>
+        <div id="configOutputBody">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ SETTINGS ═══════════════════════════════════════════ -->
+    <section class="page-section" id="pageSettings">
+      <div class="section-header">
+        <h2>Settings</h2>
+        <p>Configuration status and processing preferences.</p>
+      </div>
+
+      <div class="settings-grid">
+        <!-- OpenRouter LLM Gateway -->
+        <div class="settings-card">
+          <h3>🤖 OpenRouter Gateway (Free Models)</h3>
+          <div class="detail-row">
+            <div class="detail-label">Gateway</div>
+            <div class="detail-value" id="settingsLlmProvider">OpenRouter (Free)</div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-label">Active Model</div>
+            <div class="detail-value" id="settingsLlmModel">—</div>
+          </div>
+          <div class="form-group mt-2 mb-2">
+            <label class="form-label" for="settingsModelSelect">Available Free Models</label>
+            <select class="form-select" id="settingsModelSelect">
+              <option value="">Loading free models…</option>
+            </select>
+          </div>
+          <div class="detail-row">
+            <div class="detail-label">Status</div>
+            <div class="detail-value">
+              <span class="status-indicator" id="settingsLlmStatus">
+                <span class="status-dot checking"></span>
+                Checking…
+              </span>
+            </div>
+          </div>
+          <div class="notice notice-info mt-4">
+            <span>ℹ️</span>
+            <span>Only free models (pricing $0/0) are used. The app will never silently switch to paid models.</span>
+          </div>
+        </div>
+
+        <!-- Local Companion Agent -->
+        <div class="settings-card">
+          <h3>🛡️ Local Companion Agent</h3>
+          <div class="detail-row">
+            <div class="detail-label">Agent Status</div>
+            <div class="detail-value">
+              <span class="status-indicator" id="settingsCompanionStatus">
+                <span class="status-dot checking"></span>
+                Checking…
+              </span>
+            </div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-label">VS Code CLI</div>
+            <div class="detail-value" id="settingsCompanionVscode">—</div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-label">Claude CLI</div>
+            <div class="detail-value" id="settingsCompanionClaude">—</div>
+          </div>
+          <div class="notice notice-info mt-4">
+            <span>ℹ️</span>
+            <span>The local companion performs only explicitly approved configuration actions and requires confirmation before modifying files.</span>
+          </div>
+        </div>
+
+        <!-- Processing -->
+        <div class="settings-card">
+          <h3>⚙️ Processing Limits</h3>
+          <div class="detail-row">
+            <div class="detail-label">Max Upload</div>
+            <div class="detail-value" id="settingsMaxUpload">—</div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-label">Max Duration</div>
+            <div class="detail-value" id="settingsMaxDuration">—</div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-label">API Health</div>
+            <div class="detail-value">
+              <span class="status-indicator" id="settingsApiStatus">
+                <span class="status-dot checking"></span>
+                Checking…
+              </span>
+            </div>
+          </div>
+          <button class="btn btn-secondary btn-sm mt-4" id="settingsRefreshBtn">🔄 Refresh Status</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ─── Toast Container ──────────────────────────────────── -->
+  <div class="toast-container" id="toastContainer" aria-live="polite"></div>
+
+  <!-- ─── Tool Detail Modal ────────────────────────────────── -->
+  <div class="modal-backdrop" id="toolDetailModal" role="dialog" aria-modal="true" aria-labelledby="modalToolName">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modalToolName">Tool Details</h3>
+        <button class="modal-close" id="modalCloseBtn" aria-label="Close modal">✕</button>
+      </div>
+      <div class="modal-body" id="modalBody">
+        <!-- Populated by JS -->
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="modalDismissBtn">Close</button>
+        <button class="btn btn-secondary" id="modalInstallBtn">🚀 Install in AI App</button>
+        <button class="btn btn-primary" id="modalSaveBtn">💾 Save to Library</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Install in AI App Modal ──────────────────────────── -->
+  <div class="modal-backdrop" id="installModal" role="dialog" aria-modal="true" aria-labelledby="installModalTitle">
+    <div class="modal" style="max-width: 680px;">
+      <div class="modal-header">
+        <div>
+          <h3 id="installModalTitle">Install in AI App</h3>
+          <p id="installModalSubtitle" style="font-size: var(--text-sm); color: var(--text-muted); margin-top: 2px;"></p>
+        </div>
+        <button class="modal-close" id="installModalCloseBtn" aria-label="Close modal">✕</button>
+      </div>
+      <div class="modal-body" id="installModalBody">
+        <!-- Target Selection -->
+        <div class="form-group mb-4">
+          <label class="form-label" for="installTargetSelect">Target AI Coding Application</label>
+          <select class="form-select" id="installTargetSelect">
+            <option value="claude-code">Claude Code (Anthropic)</option>
+            <option value="vscode">VS Code (Copilot / MCP / Extension)</option>
+          </select>
+        </div>
+
+        <!-- Plan Status Badge -->
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <span class="detail-label">Integration Type:</span>
+            <span class="badge badge-category ml-2" id="installIntegrationType">detecting…</span>
+          </div>
+          <div>
+            <span class="detail-label">Status:</span>
+            <span class="badge badge-pending ml-2" id="installStatusBadge">Ready to install</span>
+          </div>
+        </div>
+
+        <!-- Plan Details Container -->
+        <div id="installPlanDetails">
+          <!-- Populated by JS: Prerequisites, Permissions, Commands, Risks -->
+        </div>
+
+        <!-- Execution Log Box (shown during/after install) -->
+        <div id="installLogBox" class="hidden mt-4">
+          <label class="form-label">Companion Execution Log</label>
+          <pre class="code-preview" id="installLogContent" style="max-height: 140px; overflow-y: auto;"></pre>
+        </div>
+      </div>
+      <div class="modal-footer flex-wrap gap-2 justify-between">
+        <div class="flex gap-2">
+          <button class="btn btn-secondary btn-sm" id="installCopyPromptBtn">📋 Copy AI Prompt</button>
+          <button class="btn btn-secondary btn-sm" id="installCopyConfigBtn">📋 Copy Config</button>
+        </div>
+        <div class="flex gap-2">
+          <button class="btn btn-ghost" id="installDismissBtn">Cancel</button>
+          <button class="btn btn-primary" id="installApproveBtn">⚡ Approve & Install</button>
+        </div>
+      </div>
+    </div>
+  <!-- ─── ScreenApp In-Browser Screen Recorder Modal ──────── -->
+  <div class="modal-overlay hidden" id="recordingModal" role="dialog" aria-modal="true" aria-labelledby="recorderModalTitle">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <div class="flex items-center gap-2">
+          <span class="record-pulse-dot" id="recorderPulseDot"></span>
+          <h3 class="modal-title" id="recorderModalTitle">ScreenApp Recording Studio</h3>
+        </div>
+        <button class="modal-close-btn" id="closeRecorderBtn" aria-label="Close recorder">✕</button>
+      </div>
+      <div class="modal-body">
+        <!-- Recording Stream / Preview Area -->
+        <div class="recorder-viewport-container">
+          <video id="recorderLiveVideo" autoplay muted playsinline class="recorder-video hidden"></video>
+          <video id="recorderPlaybackVideo" controls playsinline class="recorder-video hidden"></video>
+          <div id="recorderIdleState" class="recorder-idle-state">
+            <div class="recorder-icon-large">🎙️</div>
+            <h4 style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.5rem;">Ready to record your screen & audio</h4>
+            <p style="color: var(--text-secondary); max-width: 480px; margin: 0 auto;">Capture your screen, window, browser tab, or microphone directly in the browser. When you stop, ScreenApp will transcribe spoken words and extract skills.</p>
+          </div>
+        </div>
+
+        <!-- Live Controls & Status Bar -->
+        <div class="recorder-controls-bar flex items-center justify-between flex-wrap gap-3 mt-4">
+          <div class="flex items-center gap-4">
+            <div class="record-timer-badge" id="recorderTimerBadge">00:00</div>
+            <label class="flex items-center gap-2 text-sm text-secondary cursor-pointer" style="user-select: none;">
+              <input type="checkbox" id="recorderMicToggle" checked>
+              <span>Include Microphone Audio</span>
+            </label>
+          </div>
+
+          <div class="flex items-center gap-2" id="recorderActionButtons">
+            <button class="btn btn-record" id="btnStartRecording">
+              <span class="record-pulse-dot"></span> Start Screen Recording
+            </button>
+            <button class="btn btn-secondary hidden" id="btnPauseRecording">⏸️ Pause</button>
+            <button class="btn btn-primary hidden" id="btnResumeRecording">▶️ Resume</button>
+            <button class="btn btn-danger hidden" id="btnStopRecording">⏹️ Stop Recording</button>
+          </div>
+        </div>
+
+        <div id="recorderReviewActions" class="recorder-review-actions hidden mt-4">
+          <div class="notice notice-success mb-3">
+            <span>✓</span>
+            <span>Recording captured! Review above or generate speech-to-text transcription and skill intelligence immediately.</span>
+          </div>
+          <div class="flex items-center justify-between flex-wrap gap-2">
+            <button class="btn btn-secondary btn-sm" id="btnDownloadRecording">⬇️ Download MP4/WebM</button>
+            <div class="flex gap-2">
+              <button class="btn btn-ghost btn-sm" id="btnDiscardRecording">🗑️ Discard</button>
+              <button class="btn btn-primary btn-lg" id="btnTranscribeRecording">
+                ⚡ Transcribe & Extract Skills
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script src="/script.js"></script>
+</body>
+</html>
+
