@@ -7,5 +7,6 @@
     <color name="surface_border">#334155</color>
     <color name="text_primary">#F8FAFC</color>
     <color name="text_secondary">#94A3B8</color>
+    <color name="accent">#818CF8</color>
     <color name="accent_record">#EF4444</color>
 </resources>

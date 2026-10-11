@@ -2,10 +2,13 @@
     <string name="app_name">AI Tool Discovery</string>
     <!-- Configure your public hosted HTTPS URL here -->
     <!-- For local Android Emulator testing use http://10.0.2.2:5000 -->
-    <string name="backend_base_url">https://yukon-metadata-degree-occurrence.trycloudflare.com</string>
+    <string name="backend_base_url">https://steve-photographic-monte-competitors.trycloudflare.com</string>
+    <string name="wifi_base_url">http://192.168.1.3:5000</string>
 
-    <string name="error_offline_title">No Internet Connection</string>
-    <string name="error_offline_message">Unable to connect to the Tool Discovery server. Please check your internet connection or verify the server is running.</string>
+    <string name="error_offline_title">Server Connection Failed</string>
+    <string name="error_offline_message">Unable to connect to the Tool Discovery server. Ensure your phone and PC are connected, or update the server URL below.</string>
     <string name="btn_retry">Retry Connection</string>
-    <string name="loading_message">Connecting to ScreenApp AI Studio…</string>
+    <string name="btn_change_url">Change Server URL</string>
+    <string name="btn_use_wifi">Connect via Wi-Fi (192.168.1.3:5000)</string>
+    <string name="loading_message">Connecting to AI Tool Discovery…</string>
 </resources>

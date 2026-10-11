@@ -15,12 +15,20 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.EditText
+import android.widget.FrameLayout
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.tooldiscovery.app.databinding.ActivityMainBinding
 
 class MainActivity : AppCompatActivity() {
+
+    companion object {
+        private const val PREFS_NAME = "tool_discovery_prefs"
+        private const val KEY_SERVER_URL = "key_server_url"
+    }
 
     private lateinit var binding: ActivityMainBinding
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
@@ -62,8 +70,23 @@ class MainActivity : AppCompatActivity() {
         setupOfflineRetry()
         setupWebView()
 
-        val initialUrl = getString(R.string.backend_base_url)
-        loadUrl(initialUrl)
+        loadUrl(getActiveUrl())
+    }
+
+    private fun getActiveUrl(): String {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(KEY_SERVER_URL, null) ?: getString(R.string.backend_base_url)
+    }
+
+    private fun setActiveUrl(url: String) {
+        val clean = url.trim()
+        val formatted = if (!clean.startsWith("http://") && !clean.startsWith("https://")) {
+            "http://$clean"
+        } else {
+            clean
+        }
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putString(KEY_SERVER_URL, formatted).apply()
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -84,16 +107,16 @@ class MainActivity : AppCompatActivity() {
         settings.loadWithOverviewMode = true
         settings.cacheMode = WebSettings.LOAD_DEFAULT
 
-        val baseUri = Uri.parse(getString(R.string.backend_base_url))
-        val allowedHost = baseUri.host ?: ""
-
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val url = request?.url ?: return false
                 val host = url.host ?: ""
 
-                // Keep app navigation inside WebView if on the same host
-                if (allowedHost.isNotEmpty() && (host == allowedHost || host.endsWith(".$allowedHost"))) {
+                val currentUri = Uri.parse(getActiveUrl())
+                val allowedHost = currentUri.host ?: ""
+
+                // Keep app navigation inside WebView if on the same host or local development
+                if (allowedHost.isNotEmpty() && (host == allowedHost || host.endsWith(".$allowedHost") || host == "localhost" || host == "127.0.0.1" || host == "192.168.1.3")) {
                     return false
                 }
 
@@ -192,15 +215,46 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupOfflineRetry() {
         binding.btnRetry.setOnClickListener {
-            if (isNetworkAvailable()) {
-                binding.offlineContainer.visibility = View.GONE
-                binding.webView.visibility = View.VISIBLE
-                val url = binding.webView.url ?: getString(R.string.backend_base_url)
-                loadUrl(url)
-            } else {
-                showOfflineView()
-            }
+            val url = getActiveUrl()
+            loadUrl(url)
         }
+
+        binding.btnUseWifi.setOnClickListener {
+            val wifiUrl = getString(R.string.wifi_base_url)
+            setActiveUrl(wifiUrl)
+            loadUrl(wifiUrl)
+        }
+
+        binding.btnChangeUrl.setOnClickListener {
+            showChangeUrlDialog()
+        }
+    }
+
+    private fun showChangeUrlDialog() {
+        val input = EditText(this).apply {
+            setText(getActiveUrl())
+            setSelection(text.length)
+            hint = "e.g. http://192.168.1.3:5000 or https://..."
+            setSingleLine(true)
+        }
+        val container = FrameLayout(this).apply {
+            setPadding(48, 16, 48, 0)
+            addView(input)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Server URL Configuration")
+            .setMessage("Enter the server URL (Wi-Fi IP or Cloudflare HTTPS address):")
+            .setView(container)
+            .setPositiveButton("Connect") { _, _ ->
+                val newUrl = input.text.toString().trim()
+                if (newUrl.isNotEmpty()) {
+                    setActiveUrl(newUrl)
+                    loadUrl(getActiveUrl())
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun loadUrl(url: String) {
@@ -218,6 +272,7 @@ class MainActivity : AppCompatActivity() {
         binding.offlineContainer.visibility = View.VISIBLE
         binding.progressBar.visibility = View.GONE
         binding.swipeRefresh.isRefreshing = false
+        binding.tvCurrentUrl.text = "Target: ${getActiveUrl()}"
     }
 
     private fun isNetworkAvailable(): Boolean {
