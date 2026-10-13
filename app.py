@@ -131,7 +131,7 @@ def create_app(test_config: dict = None) -> Flask:
 
         health_data = {
             "status": "ok" if is_healthy else "degraded",
-            "version": "0.4.0",
+            "version": "0.4.1-speech-fallback",
             "gateway": "openrouter",
             "llm_configured": is_configured(),
             "database": {
