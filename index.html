@@ -664,8 +664,12 @@
 
           <div class="flex items-center gap-2" id="recorderActionButtons">
             <button class="btn btn-record" id="btnStartRecording">
-              <span class="record-pulse-dot"></span> Start Screen Recording
+              <span class="record-pulse-dot"></span> <span id="recordBtnLabel">Start Screen / Live Recording</span>
             </button>
+            <button class="btn btn-secondary" id="btnMobileCameraRecord" title="Record using phone camera or choose a recorded screen video">
+              📱 Camera / Video Capture
+            </button>
+            <input type="file" id="mobileCameraInput" accept="video/*" capture="camcorder" class="hidden">
             <button class="btn btn-secondary hidden" id="btnPauseRecording">⏸️ Pause</button>
             <button class="btn btn-primary hidden" id="btnResumeRecording">▶️ Resume</button>
             <button class="btn btn-danger hidden" id="btnStopRecording">⏹️ Stop Recording</button>

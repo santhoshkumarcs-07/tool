@@ -1,13 +1,16 @@
 package com.tooldiscovery.app
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
+import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -65,12 +68,26 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        checkAndRequestPermissions()
         setupBackNavigation()
         setupSwipeRefresh()
         setupOfflineRetry()
         setupWebView()
 
         loadUrl(getActiveUrl())
+    }
+
+    private fun checkAndRequestPermissions() {
+        val permissions = arrayOf(
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.CAMERA
+        )
+        val missing = permissions.filter {
+            checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            requestPermissions(missing.toTypedArray(), 101)
+        }
     }
 
     private fun getActiveUrl(): String {
@@ -157,6 +174,12 @@ class MainActivity : AppCompatActivity() {
                 binding.progressBar.progress = newProgress
                 if (newProgress >= 100) {
                     binding.progressBar.visibility = View.GONE
+                }
+            }
+
+            override fun onPermissionRequest(request: PermissionRequest?) {
+                runOnUiThread {
+                    request?.grant(request.resources)
                 }
             }
 

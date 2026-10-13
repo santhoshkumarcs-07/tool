@@ -438,17 +438,77 @@
   function initScreenRecorder() {
     $("#closeRecorderBtn")?.addEventListener("click", closeScreenRecorderModal);
 
+    $("#btnMobileCameraRecord")?.addEventListener("click", () => {
+      $("#mobileCameraInput")?.click();
+    });
+
+    $("#mobileCameraInput")?.addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      recordedVideoBlob = file;
+      const playbackVideo = $("#recorderPlaybackVideo");
+      if (playbackVideo) {
+        playbackVideo.src = URL.createObjectURL(file);
+        playbackVideo.classList.remove("hidden");
+      }
+      $("#recorderLiveVideo")?.classList.add("hidden");
+      $("#recorderIdleState")?.classList.add("hidden");
+      $("#recorderReviewActions")?.classList.remove("hidden");
+      $("#btnStartRecording")?.classList.add("hidden");
+      $("#btnMobileCameraRecord")?.classList.add("hidden");
+      showToast("Video loaded! Click 'Transcribe & Extract Skills' to analyze.", "success");
+    });
+
     $("#btnStartRecording")?.addEventListener("click", async () => {
       try {
         const includeMic = $("#recorderMicToggle")?.checked;
-        const displayStream = await navigator.mediaDevices.getDisplayMedia({
-          video: { cursor: "always" },
-          audio: true,
-        });
+        let stream = null;
+        let isScreenShare = false;
 
-        let audioTracks = displayStream.getAudioTracks();
+        // Try getDisplayMedia (Desktop screen capture) if supported
+        if (navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === "function") {
+          try {
+            stream = await navigator.mediaDevices.getDisplayMedia({
+              video: { cursor: "always" },
+              audio: true,
+            });
+            isScreenShare = true;
+          } catch (dispErr) {
+            if (dispErr.name === "NotAllowedError" || dispErr.name === "AbortError") {
+              return; // User cancelled screen selection dialog
+            }
+            console.warn("getDisplayMedia not supported or failed, falling back to camera:", dispErr);
+          }
+        }
 
-        if (includeMic) {
+        // Mobile fallback: Camera & Audio via getUserMedia
+        if (!stream && navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === "function") {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: "user" },
+              audio: includeMic !== false,
+            });
+          } catch (camErr) {
+            console.warn("Camera getUserMedia failed:", camErr);
+            // Try audio-only or prompt mobile capture
+            try {
+              stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            } catch (micErr) {
+              $("#mobileCameraInput")?.click();
+              return;
+            }
+          }
+        }
+
+        if (!stream) {
+          showToast("Live recording unavailable in this browser. Opening camera capture...", "info");
+          $("#mobileCameraInput")?.click();
+          return;
+        }
+
+        let audioTracks = stream.getAudioTracks();
+
+        if (includeMic && isScreenShare && audioTracks.length === 0) {
           try {
             const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
             const micTrack = micStream.getAudioTracks()[0];
@@ -459,7 +519,7 @@
         }
 
         const combinedStream = new MediaStream([
-          ...displayStream.getVideoTracks(),
+          ...stream.getVideoTracks(),
           ...audioTracks,
         ]);
         recordingStream = combinedStream;
@@ -477,6 +537,8 @@
           ? "video/webm;codecs=vp9,opus"
           : MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")
           ? "video/webm;codecs=vp8,opus"
+          : MediaRecorder.isTypeSupported("video/mp4")
+          ? "video/mp4"
           : "video/webm";
 
         mediaRecorder = new MediaRecorder(combinedStream, { mimeType });
@@ -485,7 +547,7 @@
         };
 
         mediaRecorder.onstop = () => {
-          recordedVideoBlob = new Blob(recordedChunks, { type: "video/webm" });
+          recordedVideoBlob = new Blob(recordedChunks, { type: mimeType });
           const playbackVideo = $("#recorderPlaybackVideo");
           if (playbackVideo) {
             playbackVideo.src = URL.createObjectURL(recordedVideoBlob);
@@ -507,8 +569,8 @@
         };
 
         // Handle user clicking native browser "Stop sharing" button
-        if (displayStream.getVideoTracks()[0]) {
-          displayStream.getVideoTracks()[0].onended = () => {
+        if (stream.getVideoTracks()[0]) {
+          stream.getVideoTracks()[0].onended = () => {
             if (mediaRecorder && mediaRecorder.state !== "inactive") {
               mediaRecorder.stop();
             }

@@ -4,6 +4,18 @@ A private, responsive web application for discovering AI tools, developer utilit
 
 ---
 
+## 📱 Download Android APK
+
+Install the companion app on any Android phone to transcribe videos, discover AI tools, and record screen/camera with **zero setup required**:
+
+[![Download Android APK](https://img.shields.io/badge/Download-Android%20APK%20(Direct%20Download)-brightgreen?style=for-the-badge&logo=android)](https://github.com/santhoshkumarcs-07/tool/raw/main/ai-tool-discovery.apk)
+
+👉 **[Click Here to Download `ai-tool-discovery.apk`](https://github.com/santhoshkumarcs-07/tool/raw/main/ai-tool-discovery.apk)**
+
+> **Note**: Pre-configured with the 24/7 Render Cloud Server (`https://tool-1-jj7o.onrender.com`). Runs freely on any phone even when your laptop is completely powered off!
+
+---
+
 ## Key Features
 
 1. **Video Ingestion & Caption Processing**:
