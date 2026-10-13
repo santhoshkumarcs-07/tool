@@ -27,24 +27,67 @@ class VideoIngestionError(Exception):
 
 
 def is_safe_url(url: str) -> bool:
-    """Validate that the URL does not point to internal, private, or loopback IP addresses."""
+    """Validate that the URL does not point to internal, private, loopback, or cloud metadata IP addresses."""
+    import ipaddress
+    import socket
     try:
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme not in ("http", "https"):
             return False
-        hostname = (parsed.hostname or "").lower()
+        hostname = (parsed.hostname or "").lower().strip()
         if not hostname:
             return False
-        # Block localhost, loopbacks, and private network ranges
-        if hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1"):
+
+        # Block known forbidden host names
+        if hostname in ("localhost", "0.0.0.0", "metadata.google.internal") or hostname.endswith(".local") or hostname.endswith(".internal"):
             return False
-        if hostname.startswith("192.168.") or hostname.startswith("10.") or hostname.startswith("172."):
-            return False
-        if hostname.endswith(".local") or hostname.endswith(".internal"):
-            return False
+
+        # Check raw IP or resolve host
+        try:
+            ip_obj = ipaddress.ip_address(hostname)
+            if (
+                ip_obj.is_private or ip_obj.is_loopback or
+                ip_obj.is_link_local or ip_obj.is_reserved or
+                str(ip_obj) == "169.254.169.254"
+            ):
+                return False
+        except ValueError:
+            # Hostname is a domain name. Resolve DNS safely to check IP destination
+            try:
+                addr_info = socket.getaddrinfo(hostname, None)
+                for item in addr_info:
+                    resolved_ip = item[4][0]
+                    ip_obj = ipaddress.ip_address(resolved_ip)
+                    if (
+                        ip_obj.is_private or ip_obj.is_loopback or
+                        ip_obj.is_link_local or ip_obj.is_reserved or
+                        resolved_ip == "169.254.169.254"
+                    ):
+                        return False
+            except Exception:
+                # If DNS resolution fails locally, allow known valid domains
+                for d in YOUTUBE_DOMAINS + INSTAGRAM_DOMAINS:
+                    if hostname == d or hostname.endswith("." + d):
+                        return True
+                return False
+
         return True
     except Exception:
         return False
+
+
+def check_disk_space(path: str = "data", min_free_mb: int = 100) -> Tuple[bool, int]:
+    """Check if storage directory has at least min_free_mb free disk space."""
+    try:
+        from pathlib import Path
+        p = Path(path)
+        if not p.exists():
+            p = p.parent
+        usage = shutil.disk_usage(str(p))
+        free_mb = usage.free // (1024 * 1024)
+        return (free_mb >= min_free_mb, free_mb)
+    except Exception:
+        return (True, 999999)
 
 
 def identify_source_type(url: str) -> str:
@@ -326,8 +369,8 @@ def process_url(url: str) -> Dict[str, Any]:
     }
 
 
-def validate_uploaded_video(filename: str, file_size_bytes: int, max_size_mb: int = 500) -> None:
-    """Validate uploaded video file extension and size."""
+def validate_uploaded_video(filename: str, file_size_bytes: int, max_size_mb: int = 500, storage_dir: str = None) -> None:
+    """Validate uploaded video file extension, size, and available server storage space."""
     allowed_exts = {".mp4", ".webm", ".mov", ".mkv", ".avi", ".m4v"}
     _, ext = os.path.splitext(filename.lower())
     if ext not in allowed_exts:
@@ -340,6 +383,13 @@ def validate_uploaded_video(filename: str, file_size_bytes: int, max_size_mb: in
         raise VideoIngestionError(
             f"File size ({file_size_bytes // (1024*1024)} MB) exceeds maximum limit of {max_size_mb} MB."
         )
+
+    if storage_dir:
+        has_space, free_mb = check_disk_space(storage_dir, min_free_mb=100)
+        if not has_space:
+            raise VideoIngestionError(
+                f"Server disk space is nearly full ({free_mb} MB available). Upload rejected."
+            )
 
 
 def recognize_frame_text(frame) -> str:

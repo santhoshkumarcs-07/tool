@@ -11,8 +11,12 @@ CREATE TABLE IF NOT EXISTS videos (
     title TEXT,
     duration_seconds REAL,
     status TEXT NOT NULL DEFAULT 'pending'
-        CHECK(status IN ('pending', 'downloading', 'transcribing', 'analyzing', 'completed', 'failed')),
+        CHECK(status IN ('queued', 'pending', 'downloading', 'transcribing', 'analyzing', 'completed', 'failed', 'cancelled')),
     error_message TEXT,
+    error_type TEXT,
+    retry_count INTEGER DEFAULT 0,
+    max_retries INTEGER DEFAULT 3,
+    heartbeat_at TIMESTAMP,
     transcript_path TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

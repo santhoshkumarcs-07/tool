@@ -41,15 +41,61 @@ def init_db(db_path: Path | str = None) -> None:
     with get_connection(db_path) as conn:
         with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
             conn.executescript(f.read())
-        # Safe migration for existing databases missing user_id
+
+        # Safe migration for new columns on videos and saved_tools
+        migrations = [
+            ("videos", "user_id", "TEXT DEFAULT 'default'"),
+            ("videos", "retry_count", "INTEGER DEFAULT 0"),
+            ("videos", "max_retries", "INTEGER DEFAULT 3"),
+            ("videos", "error_type", "TEXT"),
+            ("videos", "heartbeat_at", "TIMESTAMP"),
+            ("saved_tools", "user_id", "TEXT DEFAULT 'default'"),
+        ]
+        for tbl, col, col_def in migrations:
+            try:
+                conn.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {col_def}")
+            except sqlite3.OperationalError:
+                pass
+
+        # Check constraint migration test for legacy SQLite tables
         try:
-            conn.execute("ALTER TABLE videos ADD COLUMN user_id TEXT DEFAULT 'default'")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            conn.execute("ALTER TABLE saved_tools ADD COLUMN user_id TEXT DEFAULT 'default'")
-        except sqlite3.OperationalError:
-            pass
+            conn.execute("INSERT INTO videos (source_type, status) VALUES ('text', 'queued')")
+            # If successful, immediately remove the test row
+            conn.execute("DELETE FROM videos WHERE source_type = 'text' AND status = 'queued'")
+        except sqlite3.IntegrityError:
+            # Table has legacy CHECK constraint that does not allow 'queued'
+            conn.execute("PRAGMA foreign_keys=OFF")
+            conn.execute("ALTER TABLE videos RENAME TO videos_legacy")
+            conn.execute("""
+                CREATE TABLE videos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT DEFAULT 'default',
+                    source_type TEXT NOT NULL CHECK(source_type IN ('youtube', 'instagram', 'upload', 'text')),
+                    source_url TEXT,
+                    original_filename TEXT,
+                    stored_filename TEXT,
+                    title TEXT,
+                    duration_seconds REAL,
+                    status TEXT NOT NULL DEFAULT 'queued'
+                        CHECK(status IN ('queued', 'pending', 'downloading', 'transcribing', 'analyzing', 'completed', 'failed', 'cancelled')),
+                    error_message TEXT,
+                    error_type TEXT,
+                    retry_count INTEGER DEFAULT 0,
+                    max_retries INTEGER DEFAULT 3,
+                    heartbeat_at TIMESTAMP,
+                    transcript_path TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("""
+                INSERT INTO videos (id, user_id, source_type, source_url, original_filename, stored_filename, title, duration_seconds, status, error_message, transcript_path, created_at, updated_at)
+                SELECT id, user_id, source_type, source_url, original_filename, stored_filename, title, duration_seconds, status, error_message, transcript_path, created_at, updated_at
+                FROM videos_legacy
+            """)
+            conn.execute("DROP TABLE videos_legacy")
+            conn.execute("PRAGMA foreign_keys=ON")
+
         conn.commit()
 
 
@@ -76,28 +122,38 @@ def get_connection(db_path: Path | str = None):
 def create_video(source_type: str, source_url: str = None,
                  original_filename: str = None, title: str = None,
                  stored_filename: str = None, duration_seconds: float = None,
-                 user_id: str = "default") -> int:
+                 user_id: str = "default", status: str = "pending",
+                 max_retries: int = 3) -> int:
     """Insert a new video/analysis record. Returns the new row ID."""
     with get_connection() as conn:
         cursor = conn.execute(
-            """INSERT INTO videos (source_type, source_url, original_filename, stored_filename, title, duration_seconds, user_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (source_type, source_url, original_filename, stored_filename, title, duration_seconds, user_id or "default"),
+            """INSERT INTO videos (source_type, source_url, original_filename, stored_filename, title, duration_seconds, user_id, status, max_retries)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (source_type, source_url, original_filename, stored_filename, title, duration_seconds, user_id or "default", status or "pending", max_retries or 3),
         )
         conn.commit()
         return cursor.lastrowid
 
 
 def update_video_status(video_id: int, status: str,
-                        error_message: str = None) -> None:
+                        error_message: str = None,
+                        error_type: str = None) -> None:
     """Update the processing status of a video record."""
     with get_connection() as conn:
-        conn.execute(
-            """UPDATE videos
-               SET status = ?, error_message = ?, updated_at = CURRENT_TIMESTAMP
-               WHERE id = ?""",
-            (status, error_message, video_id),
-        )
+        if error_type is not None:
+            conn.execute(
+                """UPDATE videos
+                   SET status = ?, error_message = ?, error_type = ?, updated_at = CURRENT_TIMESTAMP
+                   WHERE id = ?""",
+                (status, error_message, error_type, video_id),
+            )
+        else:
+            conn.execute(
+                """UPDATE videos
+                   SET status = ?, error_message = ?, updated_at = CURRENT_TIMESTAMP
+                   WHERE id = ?""",
+                (status, error_message, video_id),
+            )
         conn.commit()
 
 
@@ -106,6 +162,7 @@ def update_video_fields(video_id: int, **kwargs) -> None:
     allowed = {
         "title", "duration_seconds", "status", "error_message",
         "transcript_path", "stored_filename", "user_id",
+        "retry_count", "max_retries", "error_type", "heartbeat_at",
     }
     fields = {k: v for k, v in kwargs.items() if k in allowed}
     if not fields:
@@ -118,6 +175,137 @@ def update_video_fields(video_id: int, **kwargs) -> None:
             values,
         )
         conn.commit()
+
+
+def update_job_heartbeat(video_id: int) -> None:
+    """Touch the heartbeat timestamp for an in-flight job."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE videos SET heartbeat_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (video_id,)
+        )
+        conn.commit()
+
+
+def claim_next_job() -> dict | None:
+    """
+    Atomically find and claim the next queued or pending video analysis job.
+    Uses serialized transaction to ensure only one worker claims a job.
+    """
+    with get_connection() as conn:
+        row = conn.execute(
+            """SELECT * FROM videos
+               WHERE status IN ('queued', 'pending')
+               ORDER BY created_at ASC
+               LIMIT 1"""
+        ).fetchone()
+        if not row:
+            return None
+        job_id = row["id"]
+        # Determine initial claimed status: if source_type == 'upload', move to 'transcribing', else 'downloading'
+        next_status = "transcribing" if row["source_type"] == "upload" else "downloading"
+        # Atomically transition only if still queued/pending
+        cursor = conn.execute(
+            """UPDATE videos
+               SET status = ?, heartbeat_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+               WHERE id = ? AND status IN ('queued', 'pending')""",
+            (next_status, job_id)
+        )
+        conn.commit()
+        if cursor.rowcount > 0:
+            updated_row = conn.execute("SELECT * FROM videos WHERE id = ?", (job_id,)).fetchone()
+            return dict(updated_row) if updated_row else None
+        return None
+
+
+def recover_orphaned_jobs(stale_threshold_seconds: int = 600) -> list[int]:
+    """
+    Recover jobs left stuck in active states after a server reboot or worker crash.
+    If retry_count < max_retries, resets them to 'queued' so workers can retry.
+    Otherwise marks them 'failed' permanently.
+    """
+    recovered_ids = []
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT id, retry_count, max_retries FROM videos
+               WHERE status IN ('downloading', 'transcribing', 'analyzing')"""
+        ).fetchall()
+        for r in rows:
+            vid = r["id"]
+            retries = r["retry_count"] or 0
+            max_r = r["max_retries"] or 3
+            if retries < max_r:
+                conn.execute(
+                    """UPDATE videos
+                       SET status = 'queued',
+                           retry_count = retry_count + 1,
+                           error_type = 'transient',
+                           error_message = 'Recovered after server restart. Queued for retry.',
+                           heartbeat_at = NULL,
+                           updated_at = CURRENT_TIMESTAMP
+                       WHERE id = ?""",
+                    (vid,)
+                )
+            else:
+                conn.execute(
+                    """UPDATE videos
+                       SET status = 'failed',
+                           error_type = 'permanent',
+                           error_message = 'Job failed: interrupted by server restart and exceeded max retries.',
+                           heartbeat_at = NULL,
+                           updated_at = CURRENT_TIMESTAMP
+                       WHERE id = ?""",
+                    (vid,)
+                )
+            recovered_ids.append(vid)
+        conn.commit()
+    return recovered_ids
+
+
+def backup_database(backup_dir: Path | str = None) -> Path:
+    """
+    Perform a safe online backup of the SQLite database using SQLite's backup API.
+    Guarantees point-in-time WAL consistency without locking other readers.
+    """
+    import datetime
+    src_path = get_db_path()
+    if backup_dir is None:
+        backup_dir = src_path.parent / "backups"
+    else:
+        backup_dir = Path(backup_dir)
+    backup_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    dest_path = backup_dir / f"tool_discovery_backup_{timestamp}.db"
+
+    with get_connection(src_path) as src_conn:
+        dest_conn = sqlite3.connect(str(dest_path))
+        try:
+            src_conn.backup(dest_conn)
+        finally:
+            dest_conn.close()
+
+    return dest_path
+
+
+def check_db_health() -> dict:
+    """Run a fast diagnostic probe on the SQLite database."""
+    try:
+        with get_connection() as conn:
+            conn.execute("SELECT 1").fetchone()
+            # Fast pragma quick check
+            integrity = conn.execute("PRAGMA quick_check(1)").fetchone()[0]
+            if integrity.lower() != "ok":
+                return {"healthy": False, "error": f"Integrity check returned: {integrity}"}
+            queued = conn.execute("SELECT COUNT(*) FROM videos WHERE status IN ('queued', 'pending')").fetchone()[0]
+            processing = conn.execute("SELECT COUNT(*) FROM videos WHERE status IN ('downloading', 'transcribing', 'analyzing')").fetchone()[0]
+            return {
+                "healthy": True,
+                "queued_jobs": queued,
+                "processing_jobs": processing,
+            }
+    except Exception as e:
+        return {"healthy": False, "error": str(e)}
 
 
 def get_video(video_id: int) -> dict | None:

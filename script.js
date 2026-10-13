@@ -294,7 +294,11 @@
         if (!resp.ok) return;
         const data = await resp.json();
 
-        if (data.status === "downloading") {
+        if (data.status === "queued" || data.status === "pending") {
+          updatePipelineStage("validate", "active");
+          $("#processingBadge").className = "badge badge-pending";
+          $("#processingBadge").textContent = "In Queue — Preparing Analysis...";
+        } else if (data.status === "downloading") {
           updatePipelineStage("validate", "completed");
           updatePipelineStage("ingest", "active");
           $("#processingBadge").className = "badge badge-pending";
@@ -1419,6 +1423,12 @@
       const resp = await fetch(`${API}/api/analysis/${videoId}`);
       if (!resp.ok) throw new Error("Failed to load analysis");
       const result = await resp.json();
+      if (result.status && result.status !== "completed" && result.status !== "failed") {
+        navigateTo("analyze");
+        showProcessing();
+        pollAnalysisStatus(videoId);
+        return;
+      }
       showResults(result);
     } catch (err) {
       showToast("Failed to load analysis results.", "error");

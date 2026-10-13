@@ -25,7 +25,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 logger = logging.getLogger(__name__)
-executor = ThreadPoolExecutor(max_workers=2)
 
 from database.db import (
     init_db, get_dashboard_stats, get_recent_videos,
@@ -35,6 +34,7 @@ from database.db import (
     update_saved_tool, delete_saved_tool,
     create_install_job, get_install_job, update_install_job_status,
 )
+from services.job_worker import get_global_worker
 
 
 def create_app(test_config: dict = None) -> Flask:
@@ -72,6 +72,12 @@ def create_app(test_config: dict = None) -> Flask:
 
     # Initialize database
     init_db()
+
+    # Initialize and start persistent JobWorker
+    worker = get_global_worker(data_dir=data_dir)
+    app.worker = worker
+    if not app.config.get("TESTING"):
+        worker.start()
 
     # ── Security & Session Isolation Middleware ─────────────────────
 
@@ -111,12 +117,56 @@ def create_app(test_config: dict = None) -> Flask:
 
     @app.route("/api/health")
     def health_check():
-        """Health check endpoint — confirms the server is running."""
-        return jsonify({
-            "status": "ok",
+        """Health check endpoint — verifies server, database, storage, and worker."""
+        from services.llm_provider import is_configured
+        from database.db import check_db_health
+        from services.video_service import check_disk_space
+
+        db_health = check_db_health()
+        data_dir_res = app.config.get("DATA_DIR_RESOLVED", "data")
+        has_space, free_mb = check_disk_space(data_dir_res, min_free_mb=50)
+        worker_status = worker.get_status()
+
+        is_healthy = db_health.get("healthy", False) and has_space
+
+        health_data = {
+            "status": "ok" if is_healthy else "degraded",
             "version": "0.4.0",
             "gateway": "openrouter",
-        })
+            "llm_configured": is_configured(),
+            "database": {
+                "status": "healthy" if db_health.get("healthy") else "unhealthy",
+                "queued_jobs": db_health.get("queued_jobs", 0),
+                "processing_jobs": db_health.get("processing_jobs", 0),
+            },
+            "storage": {
+                "status": "healthy" if has_space else "low_disk_space",
+                "free_mb": free_mb,
+            },
+            "worker": {
+                "is_alive": worker_status.get("is_alive", False),
+                "current_job_id": worker_status.get("current_job_id"),
+                "jobs_processed": worker_status.get("jobs_processed", 0),
+            },
+        }
+        status_code = 200 if is_healthy else 503
+        return jsonify(health_data), status_code
+
+    @app.route("/api/backup", methods=["POST"])
+    def trigger_backup():
+        """Trigger an online database backup point-in-time."""
+        from database.db import backup_database
+        try:
+            backup_path = backup_database()
+            return jsonify({
+                "status": "ok",
+                "message": "Database backup completed successfully.",
+                "backup_file": backup_path.name,
+                "backup_path": str(backup_path),
+            }), 200
+        except Exception as e:
+            logger.exception(f"Database backup failed: {e}")
+            return jsonify({"error": f"Backup failed: {str(e)}"}), 500
 
     @app.route("/api/dashboard")
     def dashboard():
@@ -419,7 +469,7 @@ def create_app(test_config: dict = None) -> Flask:
         )
 
         if is_async:
-            executor.submit(execute_url_analysis, video_id, url)
+            worker.notify()
             return jsonify({
                 "video_id": video_id,
                 "job_id": video_id,
@@ -464,7 +514,7 @@ def create_app(test_config: dict = None) -> Flask:
 
         file_size = os.path.getsize(upload_path)
         try:
-            validate_uploaded_video(filename, file_size, max_size_mb=max_mb)
+            validate_uploaded_video(filename, file_size, max_size_mb=max_mb, storage_dir=str(data_dir))
         except VideoIngestionError as e:
             if upload_path.exists():
                 upload_path.unlink()
@@ -479,7 +529,7 @@ def create_app(test_config: dict = None) -> Flask:
         )
 
         if is_async:
-            executor.submit(execute_upload_analysis, video_id, upload_path, filename, stored_name)
+            worker.notify()
             return jsonify({
                 "video_id": video_id,
                 "job_id": video_id,
