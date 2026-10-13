@@ -70,6 +70,7 @@ python -m pytest tests/ -v
 python app.py
 ```
 Open [http://127.0.0.1:5000](http://127.0.0.1:5000) in your browser.
+Or by installing the app apk : android/ai-tool-discovery.apk
 
 ---
 
